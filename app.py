@@ -48,7 +48,7 @@ def create_heatmap(df):
     return fig
 
 def main():
-    st.title('Product Packet Analysis Dashboard')
+    st.title('Novoxis Analysis Dashboard')
     uploaded_file = st.file_uploader("Choose an Excel file", type=['xlsx', 'xls'])
     
     if uploaded_file:
