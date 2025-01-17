@@ -222,6 +222,25 @@ def main():
                 state_pie = create_state_distribution_pie(df)
                 if state_pie:
                     st.plotly_chart(state_pie)
+
+
+            st.header('Account Holder Analysis')
+            tab1, tab2 = st.tabs(["Bar Chart", "Line Chart"])
+            with tab1:
+                st.subheader('Monthly Distribution by Account Holder (Bar Chart)')
+                bar_chart = create_account_holder_bar_chart(dataframes[selected_file])
+                if bar_chart:
+                    st.plotly_chart(bar_chart, use_container_width=True)
+            
+            with tab2:
+                st.subheader('Monthly Distribution by Account Holder (Line Chart)')
+                line_chart = create_monthly_holder_comparison(dataframes[selected_file])
+                if line_chart:
+                    st.plotly_chart(line_chart, use_container_width=True)
+
+
+
+
             
             st.header('Monthly A/C Holder Distribution')
             monthly_chart = create_monthly_holder_comparison(df)
