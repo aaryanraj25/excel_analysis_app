@@ -8,7 +8,7 @@ def load_and_clean_data(files):
     for file in files:
         df = pd.read_excel(file)
         # Rename the column from 'Account' to 'Account Holder'
-        df = df.rename(columns={'Account': 'Account Holder'})
+        df = df.rename(columns={'Account': 'A/C Holder Name'})
         df.set_index('Account Holder', inplace=True, drop=False)
         
         # Calculate Total and Average columns
