@@ -1,20 +1,23 @@
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+from io import BytesIO
 
-def load_and_clean_data(file):
-    df = pd.read_excel(file)
-    df.set_index('Account', inplace=True, drop=False)
-    
-    # Calculate Total and Average columns
-    numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
-    df['Total'] = df[numeric_cols].sum(axis=1)
-    df['Average'] = df[numeric_cols].mean(axis=1)
-    
-    return df
+def load_and_clean_data(files):
+    dataframes = {}
+    for file in files:
+        df = pd.read_excel(file)
+        df.set_index('Account', inplace=True, drop=False)
+        
+        # Calculate Total and Average columns
+        numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
+        df['Total'] = df[numeric_cols].sum(axis=1)
+        df['Average'] = df[numeric_cols].mean(axis=1)
+        
+        dataframes[file.name] = df
+    return dataframes
 
 def calculate_statistics(df):
-    # Exclude Total and Average columns from numeric calculations
     numeric_df = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
     return {
         'total_packets': numeric_df.sum().sum(),
@@ -36,10 +39,20 @@ def create_account_distribution_pie(df):
                  title='Distribution of Packets by Account')
     return fig
 
-def create_monthly_comparison_bar(df):
+def create_account_comparison_bar(df):
+    # Transpose the data to make account holders the variables
     monthly_data = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
-    fig = px.bar(monthly_data, title='Monthly Packet Comparison by Account', barmode='group')
-    fig.update_layout(yaxis_title='Number of Packets')
+    melted_data = monthly_data.reset_index().melt(id_vars=['Account'], var_name='Month', value_name='Packets')
+    
+    fig = px.bar(melted_data, x='Month', y='Packets', color='Account',
+                 title='Account Holder Comparison by Month',
+                 barmode='group')
+    fig.update_layout(
+        yaxis_title='Number of Packets',
+        xaxis_title='Month',
+        showlegend=True,
+        legend_title='Account Holders'
+    )
     return fig
 
 def create_heatmap(df):
@@ -47,35 +60,94 @@ def create_heatmap(df):
     fig = px.imshow(numeric_data.T, title='Product Packet Quantity Heatmap', aspect='auto')
     return fig
 
-def main():
-    st.title('Novoxis Analysis Dashboard')
-    uploaded_file = st.file_uploader("Choose an Excel file", type=['xlsx', 'xls'])
+def create_combined_statistics(dataframes):
+    combined_stats = {
+        'total_packets': 0,
+        'total_accounts': 0,
+        'avg_packets_per_month': 0
+    }
     
-    if uploaded_file:
-        df = load_and_clean_data(uploaded_file)
+    for df in dataframes.values():
         stats = calculate_statistics(df)
+        combined_stats['total_packets'] += stats['total_packets']
+        combined_stats['total_accounts'] += len(df)
+        combined_stats['avg_packets_per_month'] += stats['monthly_averages'].mean()
+    
+    if dataframes:
+        combined_stats['avg_packets_per_month'] /= len(dataframes)
+    
+    return combined_stats
+
+def main():
+    st.title('Novoxis Multi-File Analysis Dashboard')
+    
+    # Multiple file upload
+    uploaded_files = st.file_uploader("Choose Excel files", type=['xlsx', 'xls'], accept_multiple_files=True)
+    
+    if uploaded_files:
+        # Load all files
+        dataframes = load_and_clean_data(uploaded_files)
+        
+        # Create file selector dropdown
+        file_names = list(dataframes.keys())
+        selected_file = st.selectbox("Select File to Analyze", file_names)
+        
+        # Display combined statistics
+        st.header('Overall Statistics')
+        combined_stats = create_combined_statistics(dataframes)
         
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Packets", f"{stats['total_packets']:,}")
+            st.metric("Total Packets (All Files)", f"{combined_stats['total_packets']:,}")
         with col2:
-            st.metric("Number of Accounts", len(df))
+            st.metric("Total Accounts (All Files)", combined_stats['total_accounts'])
         with col3:
-            st.metric("Average Packets per Month", f"{stats['monthly_averages'].mean():,.0f}")
+            st.metric("Average Packets per Month (All Files)", 
+                     f"{combined_stats['avg_packets_per_month']:,.0f}")
         
+        # Display individual file analysis
+        st.header(f'Analysis for {selected_file}')
+        df = dataframes[selected_file]
+        stats = calculate_statistics(df)
+        
+        # Individual file metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("File Total Packets", f"{stats['total_packets']:,}")
+        with col2:
+            st.metric("File Number of Accounts", len(df))
+        with col3:
+            st.metric("File Average Packets per Month", 
+                     f"{stats['monthly_averages'].mean():,.0f}")
+        
+        # Charts
         st.plotly_chart(create_monthly_trend_chart(df))
         st.plotly_chart(create_account_distribution_pie(df))
-        st.plotly_chart(create_monthly_comparison_bar(df))
+        st.plotly_chart(create_account_comparison_bar(df))
         st.plotly_chart(create_heatmap(df))
         
+        # Detailed Data View
         st.header('Detailed Data View')
-        # Reorder columns to show Total and Average at the end
         cols = [col for col in df.columns if col not in ['Total', 'Average']] + ['Total', 'Average']
         df = df[cols]
         st.dataframe(df)
         
-        st.download_button("Download analyzed data as CSV",
-                         df.to_csv(), "analyzed_data.csv", "text/csv")
+        # Download buttons for both individual and combined data
+        st.download_button(
+            "Download current file data as CSV",
+            df.to_csv(),
+            f"analyzed_data_{selected_file}.csv",
+            "text/csv"
+        )
+        
+        # Combined data download
+        combined_df = pd.concat(dataframes.values(), keys=dataframes.keys())
+        st.download_button(
+            "Download all analyzed data as CSV",
+            combined_df.to_csv(),
+            "all_analyzed_data.csv",
+            "text/csv"
+        )
 
 if __name__ == '__main__':
     main()
