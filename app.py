@@ -34,12 +34,34 @@ def load_and_clean_data(files):
     return dataframes
 
 def load_from_link(link):
-    """Load data from a saved Excel link"""
+    """Load data from a saved link (Google Sheets or Excel)"""
     try:
-        df = pd.read_excel(link)
+        # Check if it's a Google Sheets link
+        if 'docs.google.com/spreadsheets' in link:
+            df = load_google_sheet(link)  # Load from Google Sheets
+        else:
+            df = pd.read_excel(link)  # Load from Excel
         return process_dataframe(df)
     except Exception as e:
         st.error(f"Error loading data from link: {str(e)}")
+        return None
+
+def load_google_sheet(link):
+    """Load data from a public Google Sheets link"""
+    try:
+        # Extract the spreadsheet ID from the Google Sheets link
+        sheet_id = link.split('/d/')[1].split('/')[0]
+        
+        # Construct the export URL to fetch the sheet as CSV
+        url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv'
+        
+        # Load the data directly into a pandas DataFrame
+        df = pd.read_csv(url)
+        
+        # Process the DataFrame (you can validate or clean it as necessary)
+        return process_dataframe(df)
+    except Exception as e:
+        st.error(f"Error loading data from Google Sheets: {str(e)}")
         return None
 
 def process_dataframe(df):
@@ -343,7 +365,7 @@ def main():
     # Sidebar for adding new links
     with st.sidebar:
         st.header("Manage Data Sources")
-        new_link = st.text_input("Add new Excel sheet link")
+        new_link = st.text_input("Add new Excel/Google Sheet link")
         link_name = st.text_input("Give this link a name")
         if st.button("Add Link") and new_link and link_name:
             st.session_state.stored_links[link_name] = new_link
