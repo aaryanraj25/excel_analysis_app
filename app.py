@@ -360,7 +360,7 @@ def analyze_data(dataframes):
 
 def main():
     st.set_page_config(layout="wide")
-    st.title('Novoxis Multi-File Analysis Dashboard')
+    st.title('Novoxis Analysis Dashboard')
     
     # Sidebar for adding new links
     with st.sidebar:
