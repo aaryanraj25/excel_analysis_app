@@ -7,9 +7,8 @@ def load_and_clean_data(files):
     dataframes = {}
     for file in files:
         df = pd.read_excel(file)
-        # Rename the column from 'Account' to 'Account Holder'
-        df = df.rename(columns={'Account': 'A/C Holder Name'})
-        df.set_index('Account Holder', inplace=True, drop=False)
+        # Use the correct column name 'A/C Holder Name'
+        df.set_index('A/C Holder Name', inplace=True, drop=False)
         
         # Calculate Total and Average columns
         numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
@@ -38,10 +37,10 @@ def create_monthly_trend_chart(df):
 
 def create_account_holder_distribution_pie(df):
     fig = px.pie(values=df['Total'], names=df.index, 
-                 title='Distribution of Packets by Account Holder')
+                 title='Distribution of Packets by A/C Holder Name')
     fig.update_layout(
         showlegend=True,
-        legend_title='Account Holder'
+        legend_title='A/C Holder Name'
     )
     return fig
 
@@ -54,10 +53,10 @@ def create_account_holder_comparison_bar(df):
     for month in monthly_data.columns:
         month_data = monthly_data[month].reset_index()
         fig = px.bar(month_data, 
-                     x='A/C Holder Name',  # Changed from 'Account' to 'Account Holder'
+                     x='A/C Holder Name',
                      y=month,
-                     title=f'Account Holder Distribution for {month}',
-                     labels={'Account Holder': 'Account Holder Name', 
+                     title=f'A/C Holder Distribution for {month}',
+                     labels={'A/C Holder Name': 'A/C Holder Name', 
                             month: 'Number of Packets'})
         fig.update_layout(
             showlegend=False,
@@ -72,14 +71,14 @@ def create_heatmap(df):
     numeric_data = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
     fig = px.imshow(numeric_data.T, 
                     title='Product Packet Quantity Heatmap', 
-                    labels={'y': 'Month', 'x': 'Account Holder'},  # Updated labels
+                    labels={'y': 'Month', 'x': 'A/C Holder Name'},
                     aspect='auto')
     return fig
 
 def create_combined_statistics(dataframes):
     combined_stats = {
         'total_packets': 0,
-        'total_account_holders': 0,  # Updated label
+        'total_account_holders': 0,
         'avg_packets_per_month': 0
     }
     
@@ -113,7 +112,7 @@ def main():
         with col1:
             st.metric("Total Packets (All Files)", f"{combined_stats['total_packets']:,}")
         with col2:
-            st.metric("Total Account Holders (All Files)", combined_stats['total_account_holders'])
+            st.metric("Total A/C Holders (All Files)", combined_stats['total_account_holders'])
         with col3:
             st.metric("Average Packets per Month (All Files)", 
                      f"{combined_stats['avg_packets_per_month']:,.0f}")
@@ -128,7 +127,7 @@ def main():
         with col1:
             st.metric("File Total Packets", f"{stats['total_packets']:,}")
         with col2:
-            st.metric("File Number of Account Holders", len(df))
+            st.metric("File Number of A/C Holders", len(df))
         with col3:
             st.metric("File Average Packets per Month", 
                      f"{stats['monthly_averages'].mean():,.0f}")
@@ -137,8 +136,8 @@ def main():
         st.plotly_chart(create_monthly_trend_chart(df))
         st.plotly_chart(create_account_holder_distribution_pie(df))
         
-        # Monthly Account Holder Distribution Charts
-        st.header('Monthly Account Holder Distribution')
+        # Monthly A/C Holder Distribution Charts
+        st.header('Monthly A/C Holder Distribution')
         account_holder_charts = create_account_holder_comparison_bar(df)
         for fig in account_holder_charts:
             st.plotly_chart(fig)
