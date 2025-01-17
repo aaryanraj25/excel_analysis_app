@@ -7,7 +7,9 @@ def load_and_clean_data(files):
     dataframes = {}
     for file in files:
         df = pd.read_excel(file)
-        df.set_index('Account', inplace=True, drop=False)
+        # Rename the column from 'Account' to 'Account Holder'
+        df = df.rename(columns={'Account': 'Account Holder'})
+        df.set_index('Account Holder', inplace=True, drop=False)
         
         # Calculate Total and Average columns
         numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
@@ -22,7 +24,7 @@ def calculate_statistics(df):
     return {
         'total_packets': numeric_df.sum().sum(),
         'monthly_averages': numeric_df.mean(),
-        'account_totals': numeric_df.sum(axis=1),
+        'account_holder_totals': numeric_df.sum(axis=1),
         'active_months': numeric_df.notna().sum(axis=1)
     }
 
@@ -34,43 +36,57 @@ def create_monthly_trend_chart(df):
     fig.update_layout(yaxis_title='Number of Packets')
     return fig
 
-def create_account_distribution_pie(df):
+def create_account_holder_distribution_pie(df):
     fig = px.pie(values=df['Total'], names=df.index, 
-                 title='Distribution of Packets by Account')
-    return fig
-
-def create_account_comparison_bar(df):
-    # Transpose the data to make account holders the variables
-    monthly_data = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
-    melted_data = monthly_data.reset_index().melt(id_vars=['Account'], var_name='Month', value_name='Packets')
-    
-    fig = px.bar(melted_data, x='Month', y='Packets', color='Account',
-                 title='Account Holder Comparison by Month',
-                 barmode='group')
+                 title='Distribution of Packets by Account Holder')
     fig.update_layout(
-        yaxis_title='Number of Packets',
-        xaxis_title='Month',
         showlegend=True,
-        legend_title='Account Holders'
+        legend_title='Account Holder'
     )
     return fig
 
+def create_account_holder_comparison_bar(df):
+    # Get data excluding Total and Average columns
+    monthly_data = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
+    
+    # Create separate plots for each month
+    figs = []
+    for month in monthly_data.columns:
+        month_data = monthly_data[month].reset_index()
+        fig = px.bar(month_data, 
+                     x='A/C Holder Name',  # Changed from 'Account' to 'Account Holder'
+                     y=month,
+                     title=f'Account Holder Distribution for {month}',
+                     labels={'Account Holder': 'Account Holder Name', 
+                            month: 'Number of Packets'})
+        fig.update_layout(
+            showlegend=False,
+            xaxis_tickangle=45,
+            height=400
+        )
+        figs.append(fig)
+    
+    return figs
+
 def create_heatmap(df):
     numeric_data = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
-    fig = px.imshow(numeric_data.T, title='Product Packet Quantity Heatmap', aspect='auto')
+    fig = px.imshow(numeric_data.T, 
+                    title='Product Packet Quantity Heatmap', 
+                    labels={'y': 'Month', 'x': 'Account Holder'},  # Updated labels
+                    aspect='auto')
     return fig
 
 def create_combined_statistics(dataframes):
     combined_stats = {
         'total_packets': 0,
-        'total_accounts': 0,
+        'total_account_holders': 0,  # Updated label
         'avg_packets_per_month': 0
     }
     
     for df in dataframes.values():
         stats = calculate_statistics(df)
         combined_stats['total_packets'] += stats['total_packets']
-        combined_stats['total_accounts'] += len(df)
+        combined_stats['total_account_holders'] += len(df)
         combined_stats['avg_packets_per_month'] += stats['monthly_averages'].mean()
     
     if dataframes:
@@ -85,10 +101,7 @@ def main():
     uploaded_files = st.file_uploader("Choose Excel files", type=['xlsx', 'xls'], accept_multiple_files=True)
     
     if uploaded_files:
-        # Load all files
         dataframes = load_and_clean_data(uploaded_files)
-        
-        # Create file selector dropdown
         file_names = list(dataframes.keys())
         selected_file = st.selectbox("Select File to Analyze", file_names)
         
@@ -100,7 +113,7 @@ def main():
         with col1:
             st.metric("Total Packets (All Files)", f"{combined_stats['total_packets']:,}")
         with col2:
-            st.metric("Total Accounts (All Files)", combined_stats['total_accounts'])
+            st.metric("Total Account Holders (All Files)", combined_stats['total_account_holders'])
         with col3:
             st.metric("Average Packets per Month (All Files)", 
                      f"{combined_stats['avg_packets_per_month']:,.0f}")
@@ -115,15 +128,21 @@ def main():
         with col1:
             st.metric("File Total Packets", f"{stats['total_packets']:,}")
         with col2:
-            st.metric("File Number of Accounts", len(df))
+            st.metric("File Number of Account Holders", len(df))
         with col3:
             st.metric("File Average Packets per Month", 
                      f"{stats['monthly_averages'].mean():,.0f}")
         
         # Charts
         st.plotly_chart(create_monthly_trend_chart(df))
-        st.plotly_chart(create_account_distribution_pie(df))
-        st.plotly_chart(create_account_comparison_bar(df))
+        st.plotly_chart(create_account_holder_distribution_pie(df))
+        
+        # Monthly Account Holder Distribution Charts
+        st.header('Monthly Account Holder Distribution')
+        account_holder_charts = create_account_holder_comparison_bar(df)
+        for fig in account_holder_charts:
+            st.plotly_chart(fig)
+            
         st.plotly_chart(create_heatmap(df))
         
         # Detailed Data View
@@ -132,7 +151,7 @@ def main():
         df = df[cols]
         st.dataframe(df)
         
-        # Download buttons for both individual and combined data
+        # Download buttons
         st.download_button(
             "Download current file data as CSV",
             df.to_csv(),
@@ -140,7 +159,6 @@ def main():
             "text/csv"
         )
         
-        # Combined data download
         combined_df = pd.concat(dataframes.values(), keys=dataframes.keys())
         st.download_button(
             "Download all analyzed data as CSV",
