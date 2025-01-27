@@ -112,7 +112,7 @@ def load_google_sheet(link):
 
 # Packet Analysis Functions
 def calculate_packet_statistics(df):
-    """Calculate statistics for packet data"""
+    """Calculate statistics for pieces data"""
     numeric_df = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
     return {
         'total_packets': numeric_df.sum().sum(),
@@ -122,23 +122,23 @@ def calculate_packet_statistics(df):
     }
 
 def create_packet_visualizations(df):
-    """Create visualizations for packet data"""
+    """Create visualizations for pieces data"""
     # Monthly trend chart
     monthly_data = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
     monthly_totals = monthly_data.sum()
     trend_chart = px.line(x=monthly_totals.index, y=monthly_totals.values,
-                         title='Monthly Product Packet Trends')
-    trend_chart.update_layout(yaxis_title='Number of Packets')
+                         title='Monthly Product Pieces Trends')
+    trend_chart.update_layout(yaxis_title='Number of Pieces')
     
     # Account distribution pie chart
     account_pie = px.pie(values=df['Total'], names=df['Account'],
-                        title='Distribution of Packets by Account')
+                        title='Distribution of Pieces by Account')
     
     # State distribution pie chart
     state_distribution = df.groupby('State')['Total'].sum()
     state_pie = px.pie(values=state_distribution.values,
                       names=state_distribution.index,
-                      title='Distribution of Packets by State')
+                      title='Distribution of Pieces by State')
     
     return trend_chart, account_pie, state_pie
 
@@ -166,11 +166,24 @@ def create_invoice_visualizations(df):
     monthly_totals = df.groupby('Month')['Amount'].sum()
     monthly_trend = px.line(x=monthly_totals.index, y=monthly_totals.values,
                            title='Monthly Invoice Trends')
+    monthly_trend.update_layout(xaxis_title='Month', yaxis_title='Amount')
     
     # Top customers bar chart
     top_customers = df.groupby('Customer Name')['Amount'].sum().sort_values(ascending=False).head(10)
-    top_customers_bar = px.bar(x=top_customers.index, y=top_customers.values,
-                              title='Top 10 Customers by Invoice Amount')
+    top_customers_bar = px.bar(
+        data_frame=pd.DataFrame({
+            'Customer': top_customers.index,
+            'Amount': top_customers.values
+        }),
+        x='Customer',
+        y='Amount',
+        title='Top 10 Customers by Invoice Amount'
+    )
+    top_customers_bar.update_layout(
+        xaxis_title='Customer Name',
+        yaxis_title='Total Amount',
+        xaxis_tickangle=-45
+    )
     
     return customer_pie, monthly_trend, top_customers_bar
 
