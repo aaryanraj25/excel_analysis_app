@@ -174,7 +174,7 @@ def create_invoice_visualizations(df):
     
     return customer_pie, monthly_trend, top_customers_bar
 
-    def analyze_packet_data(dataframes):
+def analyze_packet_data(dataframes):
     """Analyze and display visualizations for packet data"""
     try:
         file_names = list(dataframes.keys())
