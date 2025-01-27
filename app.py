@@ -9,11 +9,15 @@ def load_and_clean_packet_data(file):
     df = pd.read_excel(file)
     df.set_index('Account', inplace=True, drop=False)
     
-    # Calculate Total and Average columns
+    # Calculate Total and Average columns for numeric columns only
     numeric_cols = df.select_dtypes(include=['float64', 'int64']).columns
-    df['Total'] = df[numeric_cols].sum(axis=1)
-    df['Average'] = df[numeric_cols].mean(axis=1)
-    
+    if len(numeric_cols) > 0:
+        df['Total'] = df[numeric_cols].sum(axis=1)
+        df['Average'] = df[numeric_cols].mean(axis=1)
+    else:
+        st.warning("No numeric columns found in the data")
+        return None
+        
     return df
 
 def calculate_packet_statistics(df):
@@ -76,7 +80,10 @@ def create_invoice_visualizations(df):
 
 # Original Packet Analysis Visualizations
 def create_monthly_trend_chart(df):
+    """Create monthly trend line chart"""
     monthly_data = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
+    if monthly_data.empty:
+        return None
     monthly_totals = monthly_data.sum()
     fig = px.line(x=monthly_totals.index, y=monthly_totals.values, 
                   title='Monthly Product Packet Trends')
@@ -84,19 +91,146 @@ def create_monthly_trend_chart(df):
     return fig
 
 def create_account_distribution_pie(df):
-    fig = px.pie(values=df['Total'], names=df.index, 
+    """Create account distribution pie chart"""
+    if 'Total' not in df.columns or 'Account' not in df.columns:
+        return None
+    fig = px.pie(values=df['Total'], names=df['Account'], 
                  title='Distribution of Packets by Account')
+    fig.update_layout(showlegend=True, legend_title='Account')
     return fig
 
-def create_monthly_comparison_bar(df):
-    monthly_data = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
-    fig = px.bar(monthly_data, title='Monthly Packet Comparison by Account', barmode='group')
-    fig.update_layout(yaxis_title='Number of Packets')
+def create_state_distribution_pie(df):
+    """Create state distribution pie chart"""
+    if 'Total' not in df.columns or 'State' not in df.columns:
+        return None
+    state_distribution = df.groupby('State')['Total'].sum()
+    fig = px.pie(values=state_distribution.values, 
+                 names=state_distribution.index,
+                 title='Distribution of Packets by State')
+    fig.update_layout(showlegend=True, legend_title='State')
     return fig
+
+def create_account_holder_bar_chart(df):
+    """Create interactive bar chart for selected account holders"""
+    possible_names = ['A/C Holder Name', 'AC Holder Name', 'Account Holder Name', 
+                     'Holder Name', 'Name', 'Account Holder']
+    
+    holder_column = None
+    for name in possible_names:
+        if name in df.columns:
+            holder_column = name
+            break
+    
+    if not holder_column:
+        st.error(f"Could not find account holder column. Available columns: {', '.join(df.columns)}")
+        return None
+        
+    monthly_data = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
+    if monthly_data.empty:
+        st.error("No numeric data found for monthly comparison")
+        return None
+        
+    try:
+        account_holders = df[holder_column].unique().tolist()
+        selected_holders = st.multiselect(
+            "Select Account Holders to Display",
+            options=account_holders,
+            default=account_holders[:1] if account_holders else None
+        )
+        
+        if not selected_holders:
+            st.warning("Please select at least one account holder")
+            return None
+            
+        filtered_df = df[df[holder_column].isin(selected_holders)]
+        melted_data = pd.concat([filtered_df[holder_column], monthly_data], axis=1)
+        melted_data = pd.melt(melted_data,
+                             id_vars=[holder_column],
+                             var_name='Month',
+                             value_name='Packets')
+        
+        fig = px.bar(melted_data,
+                     x='Month',
+                     y='Packets',
+                     color=holder_column,
+                     title='Monthly Distribution by Account Holder',
+                     barmode='group')
+        
+        fig.update_layout(
+            showlegend=True,
+            legend=dict(yanchor="top", y=1, xanchor="left", x=1.02),
+            legend_title='Account Holder',
+            height=600,
+            margin=dict(r=150),
+            xaxis_title='Month',
+            yaxis_title='Number of Packets',
+            xaxis={'tickangle': 45}
+        )
+        
+        return fig
+    except Exception as e:
+        st.error(f"Error in creating bar chart: {str(e)}")
+        return None
+
+def create_monthly_holder_comparison(df):
+    """Create line chart for account holder comparison"""
+    possible_names = ['A/C Holder Name', 'AC Holder Name', 'Account Holder Name', 
+                     'Holder Name', 'Name', 'Account Holder']
+    
+    holder_column = None
+    for name in possible_names:
+        if name in df.columns:
+            holder_column = name
+            break
+    
+    if not holder_column:
+        st.error(f"Could not find account holder column. Available columns: {', '.join(df.columns)}")
+        return None
+        
+    monthly_data = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
+    if monthly_data.empty:
+        return None
+        
+    try:
+        melted_data = pd.concat([df[holder_column], monthly_data], axis=1)
+        melted_data = pd.melt(melted_data, 
+                             id_vars=[holder_column], 
+                             var_name='Month', 
+                             value_name='Packets')
+        
+        fig = px.line(melted_data, 
+                      x='Month', 
+                      y='Packets', 
+                      color=holder_column,
+                      title='Monthly Distribution by Account Holder')
+        
+        fig.update_layout(
+            showlegend=True,
+            legend=dict(yanchor="top", y=1, xanchor="left", x=1.02),
+            legend_title='Account Holder',
+            height=600,
+            margin=dict(r=150),
+            xaxis_title='Month',
+            yaxis_title='Number of Packets'
+        )
+        
+        for trace in fig.data:
+            trace.visible = "legendonly"
+            
+        return fig
+    except Exception as e:
+        st.error(f"Error in monthly holder comparison: {str(e)}")
+        return None
 
 def create_heatmap(df):
+    """Create heatmap visualization"""
     numeric_data = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
-    fig = px.imshow(numeric_data.T, title='Product Packet Quantity Heatmap', aspect='auto')
+    if numeric_data.empty:
+        return None
+    fig = px.imshow(numeric_data.T, 
+                    title='Product Packet Quantity Heatmap', 
+                    labels={'y': 'Month', 'x': 'Account'},
+                    aspect='auto')
     return fig
 
 def main():
