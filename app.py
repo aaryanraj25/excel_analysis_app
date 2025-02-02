@@ -7,38 +7,25 @@ import os
 from datetime import datetime
 import requests
 
+# Set page configuration at the very beginning
+st.set_page_config(layout="wide", page_title="Novoxis Analysis Dashboard")
+
+# Constants
 API_BASE_URL = "https://aaryanraj25-scriptapilinkmanager.web.val.run/links"
 
-def fetch_stored_links():
-    """Fetch stored links from the API"""
+# Initialize session state
+if 'initialized' not in st.session_state:
+    st.session_state.initialized = True
     try:
         response = requests.get(API_BASE_URL)
         if response.status_code == 200:
             links = response.json()
-            return {link['name']: link['url'] for link in links}
+            st.session_state.stored_links = {link['name']: link['url'] for link in links}
         else:
-            st.error(f"Failed to fetch links: {response.status_code}")
-            return {}
+            st.session_state.stored_links = {}
     except Exception as e:
-        st.error(f"Error fetching links: {str(e)}")
-        return {}
-
-def save_link(name, url):
-    """Save a new link using the API"""
-    try:
-        payload = {
-            "name": name,
-            "url": url
-        }
-        response = requests.post(API_BASE_URL, json=payload)
-        if response.status_code == 200:
-            return True
-        else:
-            st.error(f"Failed to save link: {response.status_code}")
-            return False
-    except Exception as e:
-        st.error(f"Error saving link: {str(e)}")
-        return False
+        st.error(f"Error initializing links: {str(e)}")
+        st.session_state.stored_links = {}
 
 def detect_file_type(df):
     """Detect whether the file is invoice or packet data"""
@@ -306,28 +293,50 @@ def analyze_invoice_data(dataframes):
         st.error(f"Error in invoice analysis: {str(e)}")
 
 def main():
-    st.set_page_config(layout="wide")
     st.title('Novoxis Analysis Dashboard')
-    
-    # Initialize session state for stored links
-    if 'stored_links' not in st.session_state:
-        st.session_state.stored_links = fetch_stored_links()
     
     # Sidebar for managing data sources
     with st.sidebar:
         st.header("Manage Data Sources")
         new_link = st.text_input("Add new Excel/Google Sheet link")
         link_name = st.text_input("Give this link a name")
+        
         if st.button("Add Link") and new_link and link_name:
-            if save_link(link_name, new_link):
-                st.session_state.stored_links = fetch_stored_links()
-                st.success(f"Added link: {link_name}")
+            try:
+                payload = {
+                    "name": link_name,
+                    "url": new_link
+                }
+                response = requests.post(API_BASE_URL, json=payload)
+                if response.status_code == 200:
+                    # Refresh links after successful addition
+                    response = requests.get(API_BASE_URL)
+                    if response.status_code == 200:
+                        links = response.json()
+                        st.session_state.stored_links = {link['name']: link['url'] for link in links}
+                    st.success(f"Added link: {link_name}")
+                else:
+                    st.error(f"Failed to save link: {response.status_code}")
+            except Exception as e:
+                st.error(f"Error saving link: {str(e)}")
         
         # Display stored links
         st.header("Stored Data Sources")
         for name, link in st.session_state.stored_links.items():
-            col1, col2 = st.columns([3, 1])
-            col1.write(f"{name}: {link}")
+            st.write(f"{name}: {link}")
+        
+        # Refresh button
+        if st.button("Refresh Links"):
+            try:
+                response = requests.get(API_BASE_URL)
+                if response.status_code == 200:
+                    links = response.json()
+                    st.session_state.stored_links = {link['name']: link['url'] for link in links}
+                    st.success("Links refreshed successfully")
+                else:
+                    st.error(f"Failed to refresh links: {response.status_code}")
+            except Exception as e:
+                st.error(f"Error refreshing links: {str(e)}")
     
     # Main content area
     tab1, tab2 = st.tabs(["File Upload", "Saved Links"])
@@ -355,36 +364,27 @@ def main():
             )
             
             if selected_links:
-                dataframes = {'packet': {}, 'invoice': {}}
-                for name in selected_links:
-                    df = load_from_link(st.session_state.stored_links[name])
-                    if df is not None:
-                        file_type = detect_file_type(df)
-                        if file_type == 'packet':
-                            dataframes['packet'][name] = df
-                        elif file_type == 'invoice':
-                            dataframes['invoice'][name] = df
-                
-                # Analyze packet data if available
-                if dataframes['packet']:
-                    st.header("Packet Analysis")
-                analyze_packet_data(dataframes['packet'])
-                
-                # Analyze invoice data if available
-                if dataframes['invoice']:
-                    st.header("Invoice Analysis")
-                    analyze_invoice_data(dataframes['invoice'])
+                    dataframes = {'packet': {}, 'invoice': {}}
+                    for name in selected_links:
+                        df = load_from_link(st.session_state.stored_links[name])
+                        if df is not None:
+                            file_type = detect_file_type(df)
+                            if file_type == 'packet':
+                                dataframes['packet'][name] = df
+                            elif file_type == 'invoice':
+                                dataframes['invoice'][name] = df
+                    
+                    # Analyze packet data if available
+                    if dataframes['packet']:
+                        st.header("Packet Analysis")
+                        analyze_packet_data(dataframes['packet'])
+                    
+                    # Analyze invoice data if available
+                    if dataframes['invoice']:
+                        st.header("Invoice Analysis")
+                        analyze_invoice_data(dataframes['invoice'])
         else:
             st.info("No saved links available. Add links using the sidebar.")
-
-def refresh_links():
-    """Refresh the stored links from the API"""
-    st.session_state.stored_links = fetch_stored_links()
-    st.experimental_rerun()
-
-# Add a refresh button in the UI to manually update links
-if st.sidebar.button("Refresh Links"):
-    refresh_links()
 
 if __name__ == '__main__':
     main()
