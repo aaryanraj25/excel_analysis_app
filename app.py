@@ -5,19 +5,40 @@ from io import BytesIO
 import json
 import os
 from datetime import datetime
+import requests
 
-# Initialize session state for stored links
-if 'stored_links' not in st.session_state:
+API_BASE_URL = "https://aaryanraj25-scriptapilinkmanager.web.val.run/links"
+
+def fetch_stored_links():
+    """Fetch stored links from the API"""
     try:
-        with open('stored_links.json', 'r') as f:
-            st.session_state.stored_links = json.load(f)
-    except FileNotFoundError:
-        st.session_state.stored_links = {}
+        response = requests.get(API_BASE_URL)
+        if response.status_code == 200:
+            links = response.json()
+            return {link['name']: link['url'] for link in links}
+        else:
+            st.error(f"Failed to fetch links: {response.status_code}")
+            return {}
+    except Exception as e:
+        st.error(f"Error fetching links: {str(e)}")
+        return {}
 
-def save_links():
-    """Save stored links to file"""
-    with open('stored_links.json', 'w') as f:
-        json.dump(st.session_state.stored_links, f)
+def save_link(name, url):
+    """Save a new link using the API"""
+    try:
+        payload = {
+            "name": name,
+            "url": url
+        }
+        response = requests.post(API_BASE_URL, json=payload)
+        if response.status_code == 200:
+            return True
+        else:
+            st.error(f"Failed to save link: {response.status_code}")
+            return False
+    except Exception as e:
+        st.error(f"Error saving link: {str(e)}")
+        return False
 
 def detect_file_type(df):
     """Detect whether the file is invoice or packet data"""
@@ -110,7 +131,6 @@ def load_google_sheet(link):
         st.error(f"Error loading data from Google Sheets: {str(e)}")
         return None
 
-# Packet Analysis Functions
 def calculate_packet_statistics(df):
     """Calculate statistics for pieces data"""
     numeric_df = df.select_dtypes(include=['float64', 'int64']).drop(['Total', 'Average'], axis=1, errors='ignore')
@@ -142,7 +162,6 @@ def create_packet_visualizations(df):
     
     return trend_chart, account_pie, state_pie
 
-# Invoice Analysis Functions
 def calculate_invoice_statistics(df):
     """Calculate statistics for invoice data"""
     return {
@@ -290,25 +309,25 @@ def main():
     st.set_page_config(layout="wide")
     st.title('Novoxis Analysis Dashboard')
     
+    # Initialize session state for stored links
+    if 'stored_links' not in st.session_state:
+        st.session_state.stored_links = fetch_stored_links()
+    
     # Sidebar for managing data sources
     with st.sidebar:
         st.header("Manage Data Sources")
         new_link = st.text_input("Add new Excel/Google Sheet link")
         link_name = st.text_input("Give this link a name")
         if st.button("Add Link") and new_link and link_name:
-            st.session_state.stored_links[link_name] = new_link
-            save_links()
-            st.success(f"Added link: {link_name}")
+            if save_link(link_name, new_link):
+                st.session_state.stored_links = fetch_stored_links()
+                st.success(f"Added link: {link_name}")
         
         # Display stored links
         st.header("Stored Data Sources")
         for name, link in st.session_state.stored_links.items():
             col1, col2 = st.columns([3, 1])
             col1.write(f"{name}: {link}")
-            if col2.button("Remove", key=f"remove_{name}"):
-                del st.session_state.stored_links[name]
-                save_links()
-                st.rerun()
     
     # Main content area
     tab1, tab2 = st.tabs(["File Upload", "Saved Links"])
@@ -349,7 +368,7 @@ def main():
                 # Analyze packet data if available
                 if dataframes['packet']:
                     st.header("Packet Analysis")
-                    analyze_packet_data(dataframes['packet'])
+                analyze_packet_data(dataframes['packet'])
                 
                 # Analyze invoice data if available
                 if dataframes['invoice']:
@@ -357,6 +376,15 @@ def main():
                     analyze_invoice_data(dataframes['invoice'])
         else:
             st.info("No saved links available. Add links using the sidebar.")
+
+def refresh_links():
+    """Refresh the stored links from the API"""
+    st.session_state.stored_links = fetch_stored_links()
+    st.experimental_rerun()
+
+# Add a refresh button in the UI to manually update links
+if st.sidebar.button("Refresh Links"):
+    refresh_links()
 
 if __name__ == '__main__':
     main()
