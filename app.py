@@ -409,7 +409,6 @@ def main():
                 }
                 response = requests.post(API_BASE_URL, json=payload)
                 if response.status_code == 200:
-                    # Refresh links after successful addition
                     response = requests.get(API_BASE_URL)
                     if response.status_code == 200:
                         links = response.json()
@@ -420,12 +419,10 @@ def main():
             except Exception as e:
                 st.error(f"Error saving link: {str(e)}")
         
-        # Display stored links
         st.header("Stored Data Sources")
         for name, link in st.session_state.stored_links.items():
             st.write(f"{name}: {link}")
         
-        # Refresh button
         if st.button("Refresh Links"):
             try:
                 response = requests.get(API_BASE_URL)
@@ -437,7 +434,7 @@ def main():
                     st.error(f"Failed to refresh links: {response.status_code}")
             except Exception as e:
                 st.error(f"Error refreshing links: {str(e)}")
-    
+
     # Main content area
     tab1, tab2 = st.tabs(["File Upload", "Saved Links"])
     
@@ -460,165 +457,212 @@ def main():
                 st.header("Invoice Analysis")
                 analyze_invoice_data(dataframes['invoice'])
 
-def create_combined_dashboard(packet_dataframes):
-    """Create and display combined dashboard for multiple packet files"""
-    try:
-        # Combined statistics
-        total_packets = sum(df['Total'].sum() for df in packet_dataframes.values())
-        total_accounts = sum(len(df) for df in packet_dataframes.values())
-        avg_packets = total_packets / len(packet_dataframes)
-
-        # Display metrics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Packets (All Sources)", f"{total_packets:,}")
-        with col2:
-            st.metric("Total Accounts (All Sources)", total_accounts)
-        with col3:
-            st.metric("Average Packets per Source", f"{avg_packets:,.0f}")
-
-        # Combine all dataframes
-        combined_df = pd.concat(packet_dataframes.values(), keys=packet_dataframes.keys())
-        combined_df = combined_df.reset_index(level=0).rename(columns={'level_0': 'Source'})
-
-        # Source comparison
-        source_totals = combined_df.groupby('Source')['Total'].sum()
-        source_comparison = px.bar(
-            x=source_totals.index,
-            y=source_totals.values,
-            title='Total Pieces Comparison Across Sources'
-        )
-        source_comparison.update_layout(
-            xaxis_title='Source',
-            yaxis_title='Total Pieces',
-            xaxis_tickangle=-45
-        )
-        st.plotly_chart(source_comparison, use_container_width=True)
-
-        # Account distribution
-        account_data = combined_df.groupby('Account')['Total'].sum().reset_index()
-        total_pieces = account_data['Total'].sum()
-        account_data['Percentage'] = (account_data['Total'] / total_pieces) * 100
-
-        # Group accounts with less than 2%
-        others_mask = account_data['Percentage'] < 2
-        others_sum = account_data[others_mask]['Total'].sum()
-        pie_data = account_data[~others_mask].copy()
-        if others_sum > 0:
-            others_row = pd.DataFrame({
-                'Account': ['Others'],
-                'Total': [others_sum],
-                'Percentage': [(others_sum / total_pieces) * 100]
-            })
-            pie_data = pd.concat([pie_data, others_row])
-
-        # Create visualizations
-        col1, col2 = st.columns(2)
-
-        with col1:
-            account_pie = px.pie(
-                pie_data,
-                values='Total',
-                names='Account',
-                title='Combined Distribution of Pieces by Account (< 2% grouped as Others)'
-            )
-            st.plotly_chart(account_pie)
-
-        with col2:
-            state_distribution = combined_df.groupby('State')['Total'].sum()
-            state_pie = px.pie(
-                values=state_distribution.values,
-                names=state_distribution.index,
-                title='Combined Distribution of Pieces by State'
-            )
-            st.plotly_chart(state_pie)
-
-        # Account holder comparison
-        holder_comparison = px.bar(
-            combined_df.groupby(['Source', 'A/C Holder Name'])['Total'].sum().reset_index(),
-            x='A/C Holder Name',
-            y='Total',
-            color='Source',
-            title='Account Holder Comparison Across Sources',
-            barmode='group'
-        )
-        holder_comparison.update_layout(
-            xaxis_tickangle=-45,
-            xaxis_title='Account Holder Name',
-            yaxis_title='Total Pieces'
-        )
-        st.plotly_chart(holder_comparison, use_container_width=True)
-
-        # State comparison
-        state_comparison = px.bar(
-            combined_df.groupby(['Source', 'State'])['Total'].sum().reset_index(),
-            x='State',
-            y='Total',
-            color='Source',
-            title='State-wise Comparison Across Sources',
-            barmode='group'
-        )
-        state_comparison.update_layout(xaxis_tickangle=-45)
-        st.plotly_chart(state_comparison, use_container_width=True)
-
-        # Monthly trend comparison
-        monthly_cols = combined_df.select_dtypes(include=['float64', 'int64']).columns
-        monthly_cols = [col for col in monthly_cols if col not in ['Total', 'Average']]
-
-        if monthly_cols:
-            monthly_data = combined_df.groupby('Source')[monthly_cols].sum()
-            monthly_trend = px.line(
-                monthly_data.T,
-                title='Monthly Trends Comparison Across Sources'
-            )
-            monthly_trend.update_layout(
-                xaxis_title='Month',
-                yaxis_title='Total Pieces'
-            )
-            st.plotly_chart(monthly_trend, use_container_width=True)
-
-        # Download combined data
-        st.subheader("Download Combined Data")
-        csv_data = combined_df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            "Download Combined Analysis Data",
-            csv_data,
-            "combined_packet_analysis.csv",
-            "text/csv"
-        )
-
-    except Exception as e:
-        st.error(f"Error in combined analysis: {str(e)}")
-    
     with tab2:
         if st.session_state.stored_links:
+            st.header("Analysis from Saved Links")
+            
+            # Add filter options
+            filter_col1, filter_col2 = st.columns(2)
+            with filter_col1:
+                file_type_filter = st.multiselect(
+                    "Filter by File Type",
+                    options=["Packet Data", "Invoice Data"],
+                    default=["Packet Data", "Invoice Data"]
+                )
+            
+            with filter_col2:
+                date_filter = st.date_input(
+                    "Filter by Date (Optional)",
+                    value=None,
+                    help="Filter files by date if available"
+                )
+            
             selected_links = st.multiselect(
                 "Select links to analyze",
                 options=list(st.session_state.stored_links.keys())
             )
             
             if selected_links:
+                with st.spinner("Loading and analyzing data..."):
                     dataframes = {'packet': {}, 'invoice': {}}
+                    
+                    # Load data from selected links
                     for name in selected_links:
                         df = load_from_link(st.session_state.stored_links[name])
                         if df is not None:
                             file_type = detect_file_type(df)
-                            if file_type == 'packet':
+                            if file_type == 'packet' and "Packet Data" in file_type_filter:
                                 dataframes['packet'][name] = df
-                            elif file_type == 'invoice':
+                            elif file_type == 'invoice' and "Invoice Data" in file_type_filter:
                                 dataframes['invoice'][name] = df
                     
-                    # Analyze packet data if available
+                    # Display analysis based on loaded data
                     if dataframes['packet']:
-                        st.header("Packet Analysis")
-                        analyze_packet_data(dataframes['packet'])
+                        st.header("Packet Data Analysis")
+                        
+                        # Show combined analysis if multiple packet files
+                        if len(dataframes['packet']) > 1:
+                            with st.expander("View Combined Packet Analysis", expanded=True):
+                                create_combined_dashboard(dataframes['packet'])
+                        
+                        # Individual packet analysis
+                        with st.expander("View Individual Packet Analysis", expanded=False):
+                            analyze_packet_data(dataframes['packet'])
                     
-                    # Analyze invoice data if available
                     if dataframes['invoice']:
-                        st.header("Invoice Analysis")
-                        analyze_invoice_data(dataframes['invoice'])
+                        st.header("Invoice Data Analysis")
+                        
+                        # Show combined invoice analysis if multiple invoice files
+                        if len(dataframes['invoice']) > 1:
+                            with st.expander("View Combined Invoice Analysis", expanded=True):
+                                create_combined_invoice_dashboard(dataframes['invoice'])
+                        
+                        # Individual invoice analysis
+                        with st.expander("View Individual Invoice Analysis", expanded=False):
+                            analyze_invoice_data(dataframes['invoice'])
+                    
+                    # Add comparison tools
+                    if dataframes['packet'] or dataframes['invoice']:
+                        st.header("Analysis Tools")
+                        
+                        tool_col1, tool_col2 = st.columns(2)
+                        with tool_col1:
+                            if st.button("Generate Summary Report"):
+                                generate_summary_report(dataframes)
+                        
+                        with tool_col2:
+                            if st.button("Export All Analysis"):
+                                export_all_analysis(dataframes)
         else:
             st.info("No saved links available. Add links using the sidebar.")
+
+def create_combined_invoice_dashboard(invoice_dataframes):
+    """Create and display combined dashboard for multiple invoice files"""
+    try:
+        # Combined statistics
+        total_amount = sum(df['Amount'].sum() for df in invoice_dataframes.values())
+        total_invoices = sum(len(df) for df in invoice_dataframes.values())
+        avg_amount = total_amount / total_invoices
+        
+        # Display metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Amount (All Sources)", f"₹{total_amount:,.2f}")
+        with col2:
+            st.metric("Total Invoices (All Sources)", total_invoices)
+        with col3:
+            st.metric("Average Invoice Amount", f"₹{avg_amount:,.2f}")
+        
+        # Combine all dataframes
+        combined_df = pd.concat(invoice_dataframes.values(), keys=invoice_dataframes.keys())
+        combined_df = combined_df.reset_index(level=0).rename(columns={'level_0': 'Source'})
+        
+        # Create visualizations
+        # Source comparison
+        source_totals = combined_df.groupby('Source')['Amount'].sum()
+        source_comparison = px.bar(
+            x=source_totals.index,
+            y=source_totals.values,
+            title='Total Amount Comparison Across Sources'
+        )
+        st.plotly_chart(source_comparison, use_container_width=True)
+        
+        # Customer distribution
+        col1, col2 = st.columns(2)
+        with col1:
+            customer_totals = combined_df.groupby('Customer Name')['Amount'].sum()
+            customer_pie = px.pie(
+                values=customer_totals.values,
+                names=customer_totals.index,
+                title='Combined Distribution by Customer'
+            )
+            st.plotly_chart(customer_pie)
+        
+        with col2:
+            monthly_trend = px.line(
+                combined_df.groupby(['Source', 'Month'])['Amount'].sum().reset_index(),
+                x='Month',
+                y='Amount',
+                color='Source',
+                title='Monthly Trends Comparison'
+            )
+            st.plotly_chart(monthly_trend)
+        
+        # Download combined data
+        st.subheader("Download Combined Data")
+        csv_data = combined_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "Download Combined Invoice Analysis",
+            csv_data,
+            "combined_invoice_analysis.csv",
+            "text/csv"
+        )
+        
+    except Exception as e:
+        st.error(f"Error in combined invoice analysis: {str(e)}")
+
+def generate_summary_report(dataframes):
+    """Generate a summary report of all analyzed data"""
+    try:
+        report = "# Analysis Summary Report\n\n"
+        
+        if dataframes['packet']:
+            report += "## Packet Data Summary\n"
+            for name, df in dataframes['packet'].items():
+                report += f"\n### {name}\n"
+                report += f"- Total Packets: {df['Total'].sum():,}\n"
+                report += f"- Number of Accounts: {len(df)}\n"
+                report += f"- States Covered: {', '.join(df['State'].unique())}\n"
+        
+        if dataframes['invoice']:
+            report += "\n## Invoice Data Summary\n"
+            for name, df in dataframes['invoice'].items():
+                report += f"\n### {name}\n"
+                report += f"- Total Amount: ₹{df['Amount'].sum():,.2f}\n"
+                report += f"- Number of Invoices: {len(df)}\n"
+                report += f"- Unique Customers: {df['Customer Name'].nunique()}\n"
+        
+        # Convert report to PDF or download as markdown
+        st.markdown(report)
+        st.download_button(
+            "Download Summary Report",
+            report,
+            "analysis_summary_report.md",
+            "text/markdown"
+        )
+        
+    except Exception as e:
+        st.error(f"Error generating summary report: {str(e)}")
+
+def export_all_analysis(dataframes):
+    """Export all analysis data as a zip file"""
+    try:
+        # Create a BytesIO object to store the zip file
+        zip_buffer = BytesIO()
+        
+        # Create timestamp for filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Export packet data
+        if dataframes['packet']:
+            for name, df in dataframes['packet'].items():
+                df.to_csv(f"packet_analysis_{name}_{timestamp}.csv", index=False)
+        
+        # Export invoice data
+        if dataframes['invoice']:
+            for name, df in dataframes['invoice'].items():
+                df.to_csv(f"invoice_analysis_{name}_{timestamp}.csv", index=False)
+        
+        # Create download button
+        st.download_button(
+            "Download All Analysis Data",
+            zip_buffer.getvalue(),
+            f"complete_analysis_{timestamp}.zip",
+            "application/zip"
+        )
+        
+    except Exception as e:
+        st.error(f"Error exporting analysis data: {str(e)}")
 
 if __name__ == '__main__':
     main()
