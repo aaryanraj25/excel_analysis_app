@@ -445,16 +445,150 @@ def main():
         uploaded_files = st.file_uploader("Choose Excel files", type=['xlsx', 'xls'], accept_multiple_files=True)
         if uploaded_files:
             dataframes = load_and_clean_data(uploaded_files)
-            
+
             # Analyze packet data if available
             if dataframes['packet']:
-                st.header("Packet Analysis")
+                if len(dataframes['packet']) > 1:
+                    st.header("Combined Packet Analysis Dashboard")
+                    create_combined_dashboard(dataframes['packet'])
+
+                st.header("Individual Packet Analysis")
                 analyze_packet_data(dataframes['packet'])
-            
+
             # Analyze invoice data if available
             if dataframes['invoice']:
                 st.header("Invoice Analysis")
                 analyze_invoice_data(dataframes['invoice'])
+
+def create_combined_dashboard(packet_dataframes):
+    """Create and display combined dashboard for multiple packet files"""
+    try:
+        # Combined statistics
+        total_packets = sum(df['Total'].sum() for df in packet_dataframes.values())
+        total_accounts = sum(len(df) for df in packet_dataframes.values())
+        avg_packets = total_packets / len(packet_dataframes)
+
+        # Display metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Packets (All Sources)", f"{total_packets:,}")
+        with col2:
+            st.metric("Total Accounts (All Sources)", total_accounts)
+        with col3:
+            st.metric("Average Packets per Source", f"{avg_packets:,.0f}")
+
+        # Combine all dataframes
+        combined_df = pd.concat(packet_dataframes.values(), keys=packet_dataframes.keys())
+        combined_df = combined_df.reset_index(level=0).rename(columns={'level_0': 'Source'})
+
+        # Source comparison
+        source_totals = combined_df.groupby('Source')['Total'].sum()
+        source_comparison = px.bar(
+            x=source_totals.index,
+            y=source_totals.values,
+            title='Total Pieces Comparison Across Sources'
+        )
+        source_comparison.update_layout(
+            xaxis_title='Source',
+            yaxis_title='Total Pieces',
+            xaxis_tickangle=-45
+        )
+        st.plotly_chart(source_comparison, use_container_width=True)
+
+        # Account distribution
+        account_data = combined_df.groupby('Account')['Total'].sum().reset_index()
+        total_pieces = account_data['Total'].sum()
+        account_data['Percentage'] = (account_data['Total'] / total_pieces) * 100
+
+        # Group accounts with less than 2%
+        others_mask = account_data['Percentage'] < 2
+        others_sum = account_data[others_mask]['Total'].sum()
+        pie_data = account_data[~others_mask].copy()
+        if others_sum > 0:
+            others_row = pd.DataFrame({
+                'Account': ['Others'],
+                'Total': [others_sum],
+                'Percentage': [(others_sum / total_pieces) * 100]
+            })
+            pie_data = pd.concat([pie_data, others_row])
+
+        # Create visualizations
+        col1, col2 = st.columns(2)
+
+        with col1:
+            account_pie = px.pie(
+                pie_data,
+                values='Total',
+                names='Account',
+                title='Combined Distribution of Pieces by Account (< 2% grouped as Others)'
+            )
+            st.plotly_chart(account_pie)
+
+        with col2:
+            state_distribution = combined_df.groupby('State')['Total'].sum()
+            state_pie = px.pie(
+                values=state_distribution.values,
+                names=state_distribution.index,
+                title='Combined Distribution of Pieces by State'
+            )
+            st.plotly_chart(state_pie)
+
+        # Account holder comparison
+        holder_comparison = px.bar(
+            combined_df.groupby(['Source', 'A/C Holder Name'])['Total'].sum().reset_index(),
+            x='A/C Holder Name',
+            y='Total',
+            color='Source',
+            title='Account Holder Comparison Across Sources',
+            barmode='group'
+        )
+        holder_comparison.update_layout(
+            xaxis_tickangle=-45,
+            xaxis_title='Account Holder Name',
+            yaxis_title='Total Pieces'
+        )
+        st.plotly_chart(holder_comparison, use_container_width=True)
+
+        # State comparison
+        state_comparison = px.bar(
+            combined_df.groupby(['Source', 'State'])['Total'].sum().reset_index(),
+            x='State',
+            y='Total',
+            color='Source',
+            title='State-wise Comparison Across Sources',
+            barmode='group'
+        )
+        state_comparison.update_layout(xaxis_tickangle=-45)
+        st.plotly_chart(state_comparison, use_container_width=True)
+
+        # Monthly trend comparison
+        monthly_cols = combined_df.select_dtypes(include=['float64', 'int64']).columns
+        monthly_cols = [col for col in monthly_cols if col not in ['Total', 'Average']]
+
+        if monthly_cols:
+            monthly_data = combined_df.groupby('Source')[monthly_cols].sum()
+            monthly_trend = px.line(
+                monthly_data.T,
+                title='Monthly Trends Comparison Across Sources'
+            )
+            monthly_trend.update_layout(
+                xaxis_title='Month',
+                yaxis_title='Total Pieces'
+            )
+            st.plotly_chart(monthly_trend, use_container_width=True)
+
+        # Download combined data
+        st.subheader("Download Combined Data")
+        csv_data = combined_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "Download Combined Analysis Data",
+            csv_data,
+            "combined_packet_analysis.csv",
+            "text/csv"
+        )
+
+    except Exception as e:
+        st.error(f"Error in combined analysis: {str(e)}")
     
     with tab2:
         if st.session_state.stored_links:
