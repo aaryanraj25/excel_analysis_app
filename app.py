@@ -1,30 +1,3 @@
-python
-Execute
-Copy Code
-def main():
-    st.title('Novoxis Analysis Dashboard')
-
-    # Initialize session state
-    if 'stored_links' not in st.session_state:
-        st.session_state.stored_links = {}
-        initialize_api_connection()
-This provides a complete link management system with:
-
-Add new links
-Refresh existing links
-Delete links
-Visual feedback for all operations
-Error handling
-Persistent storage through API
-Better UI organization
-Make sure to replace API_BASE_URL with your actual API endpoint. The API should support:
-
-GET / - List all links
-POST / - Add new link
-DELETE /{name} - Delete link by name
-Let me know if you need any clarification or help with the API implementation!
-
-N
 import streamlit as st
 import pandas as pd
 import plotly.express as px
