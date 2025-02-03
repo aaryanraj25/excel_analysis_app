@@ -361,17 +361,66 @@ def main():
         st.session_state.stored_links = {}
     
     # Sidebar for managing data sources
-    with st.sidebar:
-        st.header("Manage Data Sources")
-        new_link = st.text_input("Add new Excel/Google Sheet link")
-        link_name = st.text_input("Give this link a name")
-        
+    # Sidebar for managing data sources
+with st.sidebar:
+    st.header("Manage Data Sources")
+
+    # Add new link section
+    new_link = st.text_input("Add new Excel/Google Sheet link")
+    link_name = st.text_input("Give this link a name")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
         if st.button("Add Link") and new_link and link_name:
             try:
-                st.session_state.stored_links[link_name] = new_link
-                st.success(f"Added link: {link_name}")
+                payload = {
+                    "name": link_name,
+                    "url": new_link
+                }
+                response = requests.post(API_BASE_URL, json=payload)
+                if response.status_code == 200:
+                    st.session_state.stored_links[link_name] = new_link
+                    st.success(f"Added link: {link_name}")
+                else:
+                    st.error(f"Failed to save link: {response.status_code}")
             except Exception as e:
                 st.error(f"Error saving link: {str(e)}")
+
+    with col2:
+        if st.button("🔄 Refresh Links"):
+            try:
+                response = requests.get(API_BASE_URL)
+                if response.status_code == 200:
+                    links = response.json()
+                    st.session_state.stored_links = {link['name']: link['url'] for link in links}
+                    st.success("Links refreshed successfully!")
+                else:
+                    st.error(f"Failed to refresh links: {response.status_code}")
+            except Exception as e:
+                st.error(f"Error refreshing links: {str(e)}")
+
+    # Display stored links
+    st.header("Stored Data Sources")
+    if st.session_state.stored_links:
+        for name, link in st.session_state.stored_links.items():
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write(f"**{name}**: {link}")
+            with col2:
+                if st.button("🗑️", key=f"delete_{name}"):
+                    try:
+                        response = requests.delete(f"{API_BASE_URL}/{name}")
+                        if response.status_code == 200:
+                            del st.session_state.stored_links[name]
+                            st.success(f"Deleted: {name}")
+                            st.rerun()
+                        else:
+                            st.error(f"Failed to delete link: {response.status_code}")
+                    except Exception as e:
+                        st.error(f"Error deleting link: {str(e)}")
+    else:
+        st.info("No stored links. Add links using the form above.")
     
     # Main content area
     tab1, tab2 = st.tabs(["File Upload", "Saved Links"])
