@@ -137,9 +137,27 @@ def create_packet_visualizations(df):
                          title='Monthly Product Pieces Trends')
     trend_chart.update_layout(yaxis_title='Number of Pieces')
     
-    # Account distribution pie chart
-    account_pie = px.pie(values=df['Total'], names=df['Account'],
-                        title='Distribution of Pieces by Account')
+    # Account distribution pie chart with 2% threshold
+    total_pieces = df['Total'].sum()
+    account_data = df.groupby('Account')['Total'].sum().reset_index()
+    account_data['Percentage'] = (account_data['Total'] / total_pieces) * 100
+    
+    # Separate accounts with less than 2%
+    others_mask = account_data['Percentage'] < 2
+    others_sum = account_data[others_mask]['Total'].sum()
+    
+    # Create new dataframe with consolidated 'Others' category
+    pie_data = account_data[~others_mask].copy()
+    if others_sum > 0:
+        others_row = pd.DataFrame({
+            'Account': ['Others'],
+            'Total': [others_sum],
+            'Percentage': [(others_sum / total_pieces) * 100]
+        })
+        pie_data = pd.concat([pie_data, others_row])
+    
+    account_pie = px.pie(pie_data, values='Total', names='Account',
+                        title='Distribution of Pieces by Account (< 2% grouped as Others)')
     
     # State distribution pie chart
     state_distribution = df.groupby('State')['Total'].sum()
@@ -147,7 +165,29 @@ def create_packet_visualizations(df):
                       names=state_distribution.index,
                       title='Distribution of Pieces by State')
     
-    return trend_chart, account_pie, state_pie
+    # Heatmap of monthly distribution by account
+    heatmap_data = monthly_data.T
+    heatmap = px.imshow(heatmap_data,
+                        title='Monthly Distribution Heatmap by Account',
+                        labels=dict(x='Account', y='Month', color='Pieces'),
+                        aspect='auto')
+    heatmap.update_layout(
+        xaxis_title='Account',
+        yaxis_title='Month'
+    )
+    
+    # Bar chart based on A/C Holder Name
+    holder_data = df.groupby('A/C Holder Name')['Total'].sum().sort_values(ascending=False)
+    bar_chart = px.bar(x=holder_data.index, y=holder_data.values,
+                      title='Total Pieces by Account Holder',
+                      labels={'x': 'Account Holder Name', 'y': 'Total Pieces'})
+    bar_chart.update_layout(
+        xaxis_tickangle=-45,
+        xaxis_title='Account Holder Name',
+        yaxis_title='Total Pieces'
+    )
+    
+    return trend_chart, account_pie, state_pie, heatmap, bar_chart
 
 def calculate_invoice_statistics(df):
     """Calculate statistics for invoice data"""
@@ -161,20 +201,17 @@ def calculate_invoice_statistics(df):
 
 def create_invoice_visualizations(df):
     """Create visualizations for invoice data"""
-    # Customer distribution pie chart
     customer_totals = df.groupby('Customer Name')['Amount'].sum()
     customer_pie = px.pie(values=customer_totals.values,
                          names=customer_totals.index,
                          title='Distribution by Customer')
     
-    # Monthly invoice trends
     df['Month'] = pd.to_datetime(df['Invoice No'].str[:6], format='%y%m%d', errors='coerce').dt.strftime('%Y-%m')
     monthly_totals = df.groupby('Month')['Amount'].sum()
     monthly_trend = px.line(x=monthly_totals.index, y=monthly_totals.values,
                            title='Monthly Invoice Trends')
     monthly_trend.update_layout(xaxis_title='Month', yaxis_title='Amount')
     
-    # Top customers bar chart
     top_customers = df.groupby('Customer Name')['Amount'].sum().sort_values(ascending=False).head(10)
     top_customers_bar = px.bar(
         data_frame=pd.DataFrame({
@@ -214,16 +251,23 @@ def analyze_packet_data(dataframes):
             st.metric("Average Packets per Month", 
                      f"{stats['monthly_averages'].mean():,.0f}")
         
-        # Create and display visualizations
-        trend_chart, account_pie, state_pie = create_packet_visualizations(df)
+        trend_chart, account_pie, state_pie, heatmap, bar_chart = create_packet_visualizations(df)
         
+        # Display trend chart
         st.plotly_chart(trend_chart, use_container_width=True)
         
+        # Display pie charts in two columns
         col1, col2 = st.columns(2)
         with col1:
             st.plotly_chart(account_pie)
         with col2:
             st.plotly_chart(state_pie)
+        
+        # Display heatmap
+        st.plotly_chart(heatmap, use_container_width=True)
+        
+        # Display bar chart
+        st.plotly_chart(bar_chart, use_container_width=True)
             
         # Display detailed data
         st.header('Detailed Data View')
