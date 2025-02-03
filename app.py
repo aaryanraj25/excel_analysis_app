@@ -18,23 +18,50 @@ API_BASE_URL = "https://aaryanraj25-scriptapilinkmanager.web.val.run/links"
 def load_and_clean_data(uploaded_files):
     """Load and clean data from uploaded files"""
     dataframes = {'packet': {}, 'invoice': {}}
-
+    
     for uploaded_file in uploaded_files:
         try:
-            df = pd.read_excel(uploaded_file)
+            # Try different Excel engines
+            try:
+                df = pd.read_excel(uploaded_file, engine='openpyxl')
+            except:
+                try:
+                    df = pd.read_excel(uploaded_file, engine='xlrd')
+                except:
+                    df = pd.read_excel(uploaded_file, engine='odf')
+            
             file_type = detect_file_type(df)
-
+            
             if file_type == 'packet':
                 df = clean_packet_data(df)
                 dataframes['packet'][uploaded_file.name] = df
             elif file_type == 'invoice':
                 df = clean_invoice_data(df)
                 dataframes['invoice'][uploaded_file.name] = df
-
+            
         except Exception as e:
             st.error(f"Error processing {uploaded_file.name}: {str(e)}")
-
+    
     return dataframes
+
+def load_from_url(url):
+    """Load data from URL with multiple engine attempts"""
+    try:
+        response = requests.get(url)
+        excel_data = BytesIO(response.content)
+
+        # Try different Excel engines
+        try:
+            df = pd.read_excel(excel_data, engine='openpyxl')
+        except:
+            try:
+                df = pd.read_excel(excel_data, engine='xlrd')
+            except:
+                df = pd.read_excel(excel_data, engine='odf')
+        return df
+    except Exception as e:
+        st.error(f"Error loading data from URL: {str(e)}")
+        return None
 
 def detect_file_type(df):
     """Detect whether the file is a packet or invoice file"""
@@ -355,23 +382,22 @@ def create_combined_invoice_dashboard(invoice_dataframes):
 
 def main():
     st.title('Novoxis Analysis Dashboard')
-  
-    # Initialize session state for stored links if not exists
+
+    # Initialize session state
     if 'stored_links' not in st.session_state:
         st.session_state.stored_links = {}
-  
-    # Sidebar for managing data sources
-    # Sidebar for managing data sources
-with st.sidebar:
-    st.header("Manage Data Sources")
 
-    # Add new link section
-    new_link = st.text_input("Add new Excel/Google Sheet link")
-    link_name = st.text_input("Give this link a name")
+    # Create two columns: sidebar and main content
+    col1, col2 = st.columns([2, 8])
 
-    col1, col2 = st.columns(2)
-
+    # Sidebar content in the left column
     with col1:
+        st.header("Manage Data Sources")
+
+        # Add new link section
+        new_link = st.text_input("Add new Excel/Google Sheet link")
+        link_name = st.text_input("Give this link a name")
+
         if st.button("Add Link") and new_link and link_name:
             try:
                 payload = {
@@ -387,7 +413,6 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Error saving link: {str(e)}")
 
-    with col2:
         if st.button("🔄 Refresh Links"):
             try:
                 response = requests.get(API_BASE_URL)
@@ -400,130 +425,103 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"Error refreshing links: {str(e)}")
 
-    # Display stored links
-    st.header("Stored Data Sources")
-    if st.session_state.stored_links:
-        for name, link in st.session_state.stored_links.items():
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.write(f"**{name}**: {link}")
-            with col2:
-                if st.button("🗑️", key=f"delete_{name}"):
-                    try:
-                        response = requests.delete(f"{API_BASE_URL}/{name}")
-                        if response.status_code == 200:
-                            del st.session_state.stored_links[name]
-                            st.success(f"Deleted: {name}")
-                            st.rerun()
-                        else:
-                            st.error(f"Failed to delete link: {response.status_code}")
-                    except Exception as e:
-                        st.error(f"Error deleting link: {str(e)}")
-    else:
-        st.info("No stored links. Add links using the form above.")
-  
-    # Main content area
-    tab1, tab2 = st.tabs(["File Upload", "Saved Links"])
-  
-    with tab1:
-        uploaded_files = st.file_uploader("Choose Excel files", type=['xlsx', 'xls'], accept_multiple_files=True)
-        if uploaded_files:
-            dataframes = load_and_clean_data(uploaded_files)
-          
-            # Analyze packet data if available
-            if dataframes['packet']:
-                if len(dataframes['packet']) > 1:
-                    st.header("Combined Packet Analysis Dashboard")
-                    create_combined_dashboard(dataframes['packet'])
-              
-                st.header("Individual Packet Analysis")
-                for name, df in dataframes['packet'].items():
-                    with st.expander(f"Analysis for {name}", expanded=False):
-                        stats = calculate_packet_statistics(df)
-                        trend_chart, account_pie, state_pie, heatmap, bar_chart = create_packet_visualizations(df)
-                      
-                        # Display statistics
-                        st.subheader("Statistics")
-                        st.write(f"Total Packets: {stats['total_packets']:,}")
-                      
-                        # Display visualizations
-                        if trend_chart:
-                            st.plotly_chart(trend_chart, use_container_width=True)
-                        st.plotly_chart(account_pie, use_container_width=True)
-                        st.plotly_chart(state_pie, use_container_width=True)
-                        st.plotly_chart(heatmap, use_container_width=True)
-                        st.plotly_chart(bar_chart, use_container_width=True)
-          
-            # Analyze invoice data if available
-            if dataframes['invoice']:
-                if len(dataframes['invoice']) > 1:
-                    st.header("Combined Invoice Analysis Dashboard")
-                    create_combined_invoice_dashboard(dataframes['invoice'])
-              
-                st.header("Individual Invoice Analysis")
-                for name, df in dataframes['invoice'].items():
-                    with st.expander(f"Analysis for {name}", expanded=False):
-                        st.write(f"Total Amount: ₹{df['Amount'].sum():,.2f}")
-                        st.write(f"Number of Invoices: {len(df)}")
-  
-    with tab2:
+        # Display stored links
+        st.header("Stored Data Sources")
         if st.session_state.stored_links:
-            st.header("Analysis from Saved Links")
-          
-            selected_links = st.multiselect(
-                "Select links to analyze",
-                options=list(st.session_state.stored_links.keys())
-            )
-          
-            if selected_links:
-                with st.spinner("Loading and analyzing data..."):
-                    dataframes = {'packet': {}, 'invoice': {}}
-                  
-                    for name in selected_links:
+            for name, link in st.session_state.stored_links.items():
+                st.write(f"**{name}**")
+                col_a, col_b = st.columns([3, 1])
+                with col_a:
+                    st.write(f"{link}")
+                with col_b:
+                    if st.button("🗑️", key=f"delete_{name}"):
                         try:
-                            df = pd.read_excel(st.session_state.stored_links[name])
-                            file_type = detect_file_type(df)
-                          
-                            if file_type == 'packet':
-                                df = clean_packet_data(df)
-                                dataframes['packet'][name] = df
-                            elif file_type == 'invoice':
-                                df = clean_invoice_data(df)
-                                dataframes['invoice'][name] = df
-                              
+                            response = requests.delete(f"{API_BASE_URL}/{name}")
+                            if response.status_code == 200:
+                                del st.session_state.stored_links[name]
+                                st.success(f"Deleted: {name}")
+                                st.rerun()
+                            else:
+                                st.error(f"Failed to delete link: {response.status_code}")
                         except Exception as e:
-                            st.error(f"Error loading {name}: {str(e)}")
-                  
-                    # Display analysis based on loaded data
-                    if dataframes['packet']:
-                        st.header("Packet Data Analysis")
-                        if len(dataframes['packet']) > 1:
-                            create_combined_dashboard(dataframes['packet'])
-                      
-                        for name, df in dataframes['packet'].items():
-                            with st.expander(f"Analysis for {name}", expanded=False):
-                                stats = calculate_packet_statistics(df)
-                                trend_chart, account_pie, state_pie, heatmap, bar_chart = create_packet_visualizations(df)
-                              
-                                st.write(f"Total Packets: {stats['total_packets']:,}")
-                                if trend_chart:
-                                    st.plotly_chart(trend_chart, use_container_width=True)
-                                st.plotly_chart(account_pie, use_container_width=True)
-                                st.plotly_chart(state_pie, use_container_width=True)
-                                st.plotly_chart(heatmap, use_container_width=True)
-                                st.plotly_chart(bar_chart, use_container_width=True)
-                  
-                    if dataframes['invoice']:
-                        st.header("Invoice Data Analysis")
-                        if len(dataframes['invoice']) > 1:
-                            create_combined_invoice_dashboard(dataframes['invoice'])
-                      
-                        for name, df in dataframes['invoice'].items():
-                            with st.expander(f"Analysis for {name}", expanded=False):
-                                st.write(f"Total Amount: ₹{df['Amount'].sum():,.2f}")
-                                st.write(f"Number of Invoices: {len(df)}")
+                            st.error(f"Error deleting link: {str(e)}")
         else:
-            st.info("No saved links available. Add links using the sidebar.")
+            st.info("No stored links. Add links using the form above.")
+
+    # Main content in the right column
+    with col2:
+        tab1, tab2 = st.tabs(["File Upload", "Saved Links"])
+
+        with tab1:
+            uploaded_files = st.file_uploader("Choose Excel files", type=['xlsx', 'xls'], accept_multiple_files=True)
+            if uploaded_files:
+                dataframes = load_and_clean_data(uploaded_files)
+
+                # Rest of your tab1 code...
+                if dataframes['packet']:
+                    if len(dataframes['packet']) > 1:
+                        st.header("Combined Packet Analysis Dashboard")
+                        create_combined_dashboard(dataframes['packet'])
+
+                    st.header("Individual Packet Analysis")
+                    for name, df in dataframes['packet'].items():
+                        with st.expander(f"Analysis for {name}", expanded=False):
+                            stats = calculate_packet_statistics(df)
+                            trend_chart, account_pie, state_pie, heatmap, bar_chart = create_packet_visualizations(df)
+
+                            st.subheader("Statistics")
+                            st.write(f"Total Packets: {stats['total_packets']:,}")
+
+                            if trend_chart:
+                                st.plotly_chart(trend_chart, use_container_width=True)
+                            st.plotly_chart(account_pie, use_container_width=True)
+                            st.plotly_chart(state_pie, use_container_width=True)
+                            st.plotly_chart(heatmap, use_container_width=True)
+                            st.plotly_chart(bar_chart, use_container_width=True)
+
+                if dataframes['invoice']:
+                    if len(dataframes['invoice']) > 1:
+                        st.header("Combined Invoice Analysis Dashboard")
+                        create_combined_invoice_dashboard(dataframes['invoice'])
+
+                    st.header("Individual Invoice Analysis")
+                    for name, df in dataframes['invoice'].items():
+                        with st.expander(f"Analysis for {name}", expanded=False):
+                            st.write(f"Total Amount: ₹{df['Amount'].sum():,.2f}")
+                            st.write(f"Number of Invoices: {len(df)}")
+
+        with tab2:
+            if st.session_state.stored_links:
+                st.header("Analysis from Saved Links")
+
+                selected_links = st.multiselect(
+                    "Select links to analyze",
+                    options=list(st.session_state.stored_links.keys())
+                )
+
+                if selected_links:
+                    with st.spinner("Loading and analyzing data..."):
+                        dataframes = {'packet': {}, 'invoice': {}}
+
+                        for name in selected_links:
+                            try:
+                                df = load_from_url(st.session_state.stored_links[name])
+                                if df is not None:
+                                    file_type = detect_file_type(df)
+
+                                    if file_type == 'packet':
+                                        df = clean_packet_data(df)
+                                        dataframes['packet'][name] = df
+                                    elif file_type == 'invoice':
+                                        df = clean_invoice_data(df)
+                                        dataframes['invoice'][name] = df
+
+                            except Exception as e:
+                                st.error(f"Error loading {name}: {str(e)}")
+
+                        # Rest of your tab2 analysis code...
+            else:
+                st.info("No saved links available. Add links using the sidebar.")
 
 if __name__ == "__main__":
     main()
