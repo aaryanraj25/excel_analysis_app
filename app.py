@@ -127,6 +127,62 @@ def calculate_packet_statistics(df):
         'account_totals': numeric_df.sum(axis=1),
         'active_months': numeric_df.notna().sum(axis=1)
     }
+def analyze_packet_data(dataframes):
+    """Analyze and display visualizations for packet data"""
+    try:
+        file_names = list(dataframes.keys())
+        selected_file = st.selectbox("Select Packet File to Analyze", file_names)
+        
+        df = dataframes[selected_file]
+        st.header(f'Packet Analysis for {selected_file}')
+        
+        # Calculate and display statistics
+        stats = calculate_packet_statistics(df)
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Packets", f"{stats['total_packets']:,}")
+        with col2:
+            st.metric("Number of Accounts", len(df))
+        with col3:
+            st.metric("Average Packets per Month", 
+                     f"{stats['monthly_averages'].mean():,.0f}")
+        
+        trend_chart, account_pie, state_pie, heatmap, bar_chart = create_packet_visualizations(df)
+        
+        # Display trend chart
+        st.plotly_chart(trend_chart, use_container_width=True)
+        
+        # Display pie charts in two columns
+        col1, col2 = st.columns(2)
+        with col1:
+            st.plotly_chart(account_pie)
+        with col2:
+            st.plotly_chart(state_pie)
+        
+        # Display heatmap
+        st.plotly_chart(heatmap, use_container_width=True)
+        
+        # Display bar chart
+        st.plotly_chart(bar_chart, use_container_width=True)
+            
+        # Display detailed data
+        st.header('Detailed Data View')
+        cols = [col for col in df.columns if col not in ['Total', 'Average']] + ['Total', 'Average']
+        df_display = df[cols]
+        st.dataframe(df_display)
+        
+        # Download buttons
+        csv_data = df_display.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            "Download analyzed data as CSV",
+            csv_data,
+            f"analyzed_packet_data_{selected_file}.csv",
+            "text/csv"
+        )
+        
+    except Exception as e:
+        st.error(f"Error in packet analysis: {str(e)}")
 
 def create_packet_visualizations(df):
     """Create visualizations for pieces data"""
