@@ -197,11 +197,11 @@ def create_combined_dashboard(packet_dataframes):
         # Display metrics
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Packets (All Sources)", f"{total_packets:,}")
+            st.metric("Total Pieces (All Sources)", f"{total_packets:,}")
         with col2:
             st.metric("Total Accounts (All Sources)", total_accounts)
         with col3:
-            st.metric("Average Packets per Source", f"{avg_packets:,.0f}")
+            st.metric("Average Pieces per Source", f"{avg_packets:,.0f}")
 
         # Combine all dataframes
         combined_df = pd.concat(packet_dataframes.values(), keys=packet_dataframes.keys())
@@ -509,7 +509,7 @@ def main():
 
                     # Display analysis based on loaded data
                     if dataframes['packet']:
-                        st.header("Packet Data Analysis")
+                        st.header("Pieces Data Analysis")
                         if len(dataframes['packet']) > 1:
                             create_combined_dashboard(dataframes['packet'])
 
@@ -518,7 +518,7 @@ def main():
                                 stats = calculate_packet_statistics(df)
                                 trend_chart, account_pie, state_pie, heatmap, bar_chart = create_packet_visualizations(df)
 
-                                st.write(f"Total Packets: {stats['total_packets']:,}")
+                                st.write(f"Total Pieces: {stats['total_packets']:,}")
                                 if trend_chart:
                                     st.plotly_chart(trend_chart, use_container_width=True)
                                 st.plotly_chart(account_pie, use_container_width=True)
